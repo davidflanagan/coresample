@@ -21,6 +21,8 @@
 #
 #  WAIT: the percentage of the sample time that this core was blocked on I/O.
 #
+#  OFF: the percentage of the sample time that this core was turned off
+#     (when it was not recored as busy, idle or waiting)
 #
 import sys
 import subprocess
@@ -62,7 +64,7 @@ for cpu in range(0,len(start)):
 
 # Now loop again and report results
 # Report usage results for each processor core
-print("CPU\tWORK\tBUSY\tIDLE\tWAIT");
+print("CPU\tWORK\tBUSY\tIDLE\tWAIT\tOFF");
 for cpu in range(0,len(start)):
   e = [float(n) for n in end[cpu][1:]]
   s = [float(n) for n in start[cpu][1:]]
@@ -70,10 +72,15 @@ for cpu in range(0,len(start)):
   idle = e[3] - s[3]
   wait = e[4] - s[4]
   elapsed = sleep * 100
-  sum = busy + idle + wait;
+  sum = busy + idle + wait
   # On FirefoxOS devices, the cores sometimes seem to just go to sleep
-  # and nothing is recorded for them. In this case, we'll call them idle
+  # and nothing is recorded for them. I'm not sure what this means, but
+  # we'll report it as OFF for time the core is just turned off.
   if (sum < elapsed):
-    idle = idle + (elapsed - sum)
-  print("{}\t{:.0%}\t{:.0%}\t{:.0%}\t{:.0%}"
-        .format(cpu, busy/totalbusy, busy/elapsed, idle/elapsed, wait/elapsed))
+    off = elapsed - sum
+  else:
+    off = 0
+
+  print("{}\t{:.0%}\t{:.0%}\t{:.0%}\t{:.0%}\t{:.0%}"
+        .format(cpu, busy/totalbusy, busy/elapsed,
+                idle/elapsed, wait/elapsed, off/elapsed))
