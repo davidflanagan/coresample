@@ -1,0 +1,79 @@
+#! /usr/bin/env python
+#
+# Use adb to capture the /proc/stat values for the device. Then sleep for
+# 5 seconds (or the time specified on the command line). Then capture the
+# /proc/stat values again. Subtracting the start values from the end values
+# tells us how busy each of the CPU cores was during the time we slept.
+# We report these values in tabular form. The output is useful when trying
+# to determine how efficiently and Android or FirefoxOS app is using the
+# available cores.
+#
+# The output columns are as follows:
+#
+#  CPU: the core number
+#
+#  WORK: what percentage of the total work done during the sample period
+#     was done on this core
+#
+#  BUSY: the percentage of the sample time that this core was busy
+#
+#  IDLE: the percentage of the sample time that this core was busy
+#
+#  WAIT: the percentage of the sample time that this core was blocked on I/O.
+#
+#
+import sys
+import subprocess
+import time
+
+# How long (in seconds) to wait between cpu usage reports
+sleep = 5;
+if len(sys.argv) > 1:
+  sleep = float(sys.argv[1])
+
+# Get baseline cpu counts
+startstats = subprocess.check_output(["adb","shell", "cat", "/proc/stat"])
+
+# Now wait the specified number of seconds
+print("measuring CPU usage over {} seconds".format(sleep))
+time.sleep(sleep)
+
+# Get new cpu counts
+endstats = subprocess.check_output(["adb","shell", "cat", "/proc/stat"])
+
+# Parse the output, finding lines after the first that start with 'cpu'
+start = [line.split(' ') for line in startstats.splitlines()[1:] if line.startswith('cpu')]
+end = [line.split(' ') for line in endstats.splitlines()[1:] if line.startswith('cpu')]
+
+# Loop through the data and compute the busy values for each CPU
+# and the total of all those values
+totalbusy = 0
+busycounts = []
+for cpu in range(0,len(start)):
+  e = [float(n) for n in end[cpu][1:]]
+  s = [float(n) for n in start[cpu][1:]]
+  user = e[0] - s[0]
+  nice = e[1] - s[1]
+  system = e[2] - s[2]
+  irq = (e[5] - s[5]) + (e[6] - s[6])
+  busy = user + nice + system + irq
+  busycounts.append(busy)
+  totalbusy = totalbusy + busy
+
+# Now loop again and report results
+# Report usage results for each processor core
+print("CPU\tWORK\tBUSY\tIDLE\tWAIT");
+for cpu in range(0,len(start)):
+  e = [float(n) for n in end[cpu][1:]]
+  s = [float(n) for n in start[cpu][1:]]
+  busy = busycounts[cpu]
+  idle = e[3] - s[3]
+  wait = e[4] - s[4]
+  elapsed = sleep * 100
+  sum = busy + idle + wait;
+  # On FirefoxOS devices, the cores sometimes seem to just go to sleep
+  # and nothing is recorded for them. In this case, we'll call them idle
+  if (sum < elapsed):
+    idle = idle + (elapsed - sum)
+  print("{}\t{:.0%}\t{:.0%}\t{:.0%}\t{:.0%}"
+        .format(cpu, busy/totalbusy, busy/elapsed, idle/elapsed, wait/elapsed))
